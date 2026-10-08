@@ -86,26 +86,44 @@ export default function UsersPage() {
 
   const counts = useMemo(() => {
     let admins = 0;
-    let hosts = 0;
+    let owners = 0;
     let customers = 0;
+    let newUsers = 0;
+
+    const now = Date.now();
+    const threeDaysMs = 3 * 24 * 3600 * 1000;
 
     users.forEach((u) => {
       const r = (u.role || "").toLowerCase();
+      const isOwner = u.isOwnerApproved === true || u.ownerStatus === "APPROVED";
       if (r === "admin") admins++;
-      else if (r === "host" || r === "owner") hosts++;
+      else if (isOwner) owners++;
       else customers++;
+
+      const createdSec = u.createdAt?.seconds || 0;
+      if (u.isNewUser === true || (createdSec > 0 && now - createdSec * 1000 < threeDaysMs)) {
+        newUsers++;
+      }
     });
 
-    return { all: users.length, admins, hosts, customers };
+    return { all: users.length, admins, owners, customers, newUsers };
   }, [users]);
 
   const filteredUsers = useMemo(() => {
+    const now = Date.now();
+    const threeDaysMs = 3 * 24 * 3600 * 1000;
+
     return users.filter((u) => {
       const r = (u.role || "").toLowerCase();
+      const isOwner = u.isOwnerApproved === true || u.ownerStatus === "APPROVED";
       let matchesRole = true;
       if (roleFilter === "admin") matchesRole = r === "admin";
-      else if (roleFilter === "host") matchesRole = r === "host" || r === "owner";
-      else if (roleFilter === "customer") matchesRole = r !== "admin" && r !== "host" && r !== "owner";
+      else if (roleFilter === "owner" || roleFilter === "host") matchesRole = isOwner && r !== "admin";
+      else if (roleFilter === "customer") matchesRole = !isOwner && r !== "admin";
+      else if (roleFilter === "new") {
+        const createdSec = u.createdAt?.seconds || 0;
+        matchesRole = u.isNewUser === true || (createdSec > 0 && now - createdSec * 1000 < threeDaysMs);
+      }
 
       if (!matchesRole) return false;
 
@@ -181,15 +199,6 @@ export default function UsersPage() {
               All Users <span style={styles.tabCount}>{counts.all}</span>
             </button>
             <button
-              onClick={() => setRoleFilter("host")}
-              style={{
-                ...styles.filterBtn,
-                ...(roleFilter === "host" ? styles.filterBtnHostActive : {}),
-              }}
-            >
-              🛡️ Hosts / Owners <span style={styles.tabCountAmber}>{counts.hosts}</span>
-            </button>
-            <button
               onClick={() => setRoleFilter("customer")}
               style={{
                 ...styles.filterBtn,
@@ -197,6 +206,24 @@ export default function UsersPage() {
               }}
             >
               👥 Customers <span style={styles.tabCountPurple}>{counts.customers}</span>
+            </button>
+            <button
+              onClick={() => setRoleFilter("owner")}
+              style={{
+                ...styles.filterBtn,
+                ...(roleFilter === "owner" ? styles.filterBtnHostActive : {}),
+              }}
+            >
+              🚗 Owners <span style={styles.tabCountAmber}>{counts.owners}</span>
+            </button>
+            <button
+              onClick={() => setRoleFilter("new")}
+              style={{
+                ...styles.filterBtn,
+                ...(roleFilter === "new" ? styles.filterBtnActive : {}),
+              }}
+            >
+              ✨ New Users <span style={styles.tabCount}>{counts.newUsers}</span>
             </button>
             <button
               onClick={() => setRoleFilter("admin")}

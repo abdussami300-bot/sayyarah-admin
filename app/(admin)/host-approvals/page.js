@@ -9,11 +9,24 @@ import {
 } from "@/lib/hostApprovalsService";
 import { auth } from "@/lib/firebase";
 
+const isImageSrc = (url) => {
+  if (!url || typeof url !== "string") return false;
+  const s = url.trim();
+  return (
+    s.startsWith("http://") ||
+    s.startsWith("https://") ||
+    s.startsWith("data:image/") ||
+    s.startsWith("blob:")
+  );
+};
+
 export default function HostApprovalsPage() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all"); // "all" | "pending" | "verified" | "rejected"
+  const [categoryFilter, setCategoryFilter] = useState("all"); // "all" | "hosts" | "customers"
+  const [userOriginFilter, setUserOriginFilter] = useState("all"); // "all" | "existing" | "new"
   const [searchQuery, setSearchQuery] = useState("");
 
   // Processing state per user: { [userId]: boolean }
@@ -79,6 +92,10 @@ export default function HostApprovalsPage() {
     let pending = 0;
     let verified = 0;
     let rejected = 0;
+    let hosts = 0;
+    let customers = 0;
+    let existingUsers = 0;
+    let newUsers = 0;
 
     records.forEach((item) => {
       const status = (item.verificationStatus || "").toLowerCase();
@@ -89,6 +106,18 @@ export default function HostApprovalsPage() {
       } else if (status === "rejected" || status === "declined") {
         rejected++;
       }
+
+      if (item.isExplicitHost || item.roleCategory === "host") {
+        hosts++;
+      } else {
+        customers++;
+      }
+
+      if (item.isExistingUser) {
+        existingUsers++;
+      } else {
+        newUsers++;
+      }
     });
 
     return {
@@ -96,6 +125,10 @@ export default function HostApprovalsPage() {
       pending,
       verified,
       rejected,
+      hosts,
+      customers,
+      existingUsers,
+      newUsers,
     };
   }, [records]);
 
@@ -114,15 +147,38 @@ export default function HostApprovalsPage() {
 
       if (!matchesFilter) return false;
 
+      // Category filter (Host vs Customer)
+      if (categoryFilter === "hosts" && !item.isExplicitHost && item.roleCategory !== "host") {
+        return false;
+      }
+      if (categoryFilter === "customers" && (item.isExplicitHost || item.roleCategory === "host")) {
+        return false;
+      }
+
+      // User account origin filter (Existing updated vs New)
+      if (userOriginFilter === "existing" && !item.isExistingUser) {
+        return false;
+      }
+      if (userOriginFilter === "new" && item.isExistingUser) {
+        return false;
+      }
+
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       const name = (item.name || "").toLowerCase();
       const email = (item.email || "").toLowerCase();
       const cnic = (item.cnicNumber || "").toLowerCase();
       const license = (item.licenseNumber || "").toLowerCase();
-      return name.includes(q) || email.includes(q) || cnic.includes(q) || license.includes(q);
+      const phone = (item.phone || item.phoneNumber || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        cnic.includes(q) ||
+        license.includes(q) ||
+        phone.includes(q)
+      );
     });
-  }, [records, filter, searchQuery]);
+  }, [records, filter, categoryFilter, userOriginFilter, searchQuery]);
 
   // Handle Approve Action
   const handleApprove = async (item, approveAttachedCars = false) => {
@@ -254,10 +310,10 @@ export default function HostApprovalsPage() {
       {/* Header section matching Rent-a-Car Pakistan app theme */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <div style={styles.tagBadge}>VERIFICATION QUEUE</div>
-          <h2 style={styles.title}>Host Approvals</h2>
+          <div style={styles.tagBadge}>VERIFICATIONS & APPROVALS QUEUE</div>
+          <h2 style={styles.title}>Approvals & Verifications</h2>
           <p style={styles.subtitle}>
-            Review government CNIC documents, driving licenses, and host onboarding applications.
+            Review government CNIC documents and driving licenses. Differentiate between Customer Drivers and Host/Owner onboarding, as well as Existing users updating info vs New registrations.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -297,81 +353,209 @@ export default function HostApprovalsPage() {
         </div>
       )}
 
-      {/* Pending Banner */}
+      {/* Pending Banner with Context Breakdown */}
       {!loading && !error && counts.pending > 0 && (
         <div style={styles.pendingAlert}>
           <div style={styles.alertIcon}>⏳</div>
           <div style={styles.alertText}>
             <strong>
-              {counts.pending} {counts.pending === 1 ? "Host Application" : "Host Applications"} Awaiting Review:
+              {counts.pending} Verification {counts.pending === 1 ? "Request" : "Requests"} Awaiting Review:
             </strong>{" "}
-            Review CNIC & Driving License documents to activate host mode for verified users.
+            <span>
+              {counts.hosts} Host Applications • {counts.customers} Customer Verifications (
+              <span style={{ color: "#34D399", fontWeight: "bold" }}>
+                {counts.existingUsers} Existing Users Updated Info
+              </span>
+              , {counts.newUsers} New Registrations).
+            </span>
           </div>
         </div>
       )}
 
       {/* Filter Tabs & Search Bar */}
       {!loading && !error && (
-        <div style={styles.controlsRow}>
-          <div style={styles.filterBar}>
-            <button
-              onClick={() => setFilter("all")}
-              style={{
-                ...styles.filterBtn,
-                ...(filter === "all" ? styles.filterBtnActive : {}),
-              }}
-            >
-              All Records <span style={styles.tabCount}>{counts.all}</span>
-            </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+          {/* Primary Status Tabs */}
+          <div style={styles.controlsRow}>
+            <div style={styles.filterBar}>
+              <button
+                onClick={() => setFilter("all")}
+                style={{
+                  ...styles.filterBtn,
+                  ...(filter === "all" ? styles.filterBtnActive : {}),
+                }}
+              >
+                All Records <span style={styles.tabCount}>{counts.all}</span>
+              </button>
 
-            <button
-              onClick={() => setFilter("pending")}
-              style={{
-                ...styles.filterBtn,
-                ...(filter === "pending" ? styles.filterBtnPendingActive : {}),
-              }}
-            >
-              ⏳ Pending <span style={styles.tabCountAmber}>{counts.pending}</span>
-            </button>
+              <button
+                onClick={() => setFilter("pending")}
+                style={{
+                  ...styles.filterBtn,
+                  ...(filter === "pending" ? styles.filterBtnPendingActive : {}),
+                }}
+              >
+                ⏳ Pending Review <span style={styles.tabCountAmber}>{counts.pending}</span>
+              </button>
 
-            <button
-              onClick={() => setFilter("verified")}
-              style={{
-                ...styles.filterBtn,
-                ...(filter === "verified" ? styles.filterBtnVerifiedActive : {}),
-              }}
-            >
-              ✓ Verified Hosts <span style={styles.tabCountGreen}>{counts.verified}</span>
-            </button>
+              <button
+                onClick={() => setFilter("verified")}
+                style={{
+                  ...styles.filterBtn,
+                  ...(filter === "verified" ? styles.filterBtnVerifiedActive : {}),
+                }}
+              >
+                ✓ Approved <span style={styles.tabCountGreen}>{counts.verified}</span>
+              </button>
 
-            <button
-              onClick={() => setFilter("rejected")}
-              style={{
-                ...styles.filterBtn,
-                ...(filter === "rejected" ? styles.filterBtnRejectedActive : {}),
-              }}
-            >
-              ✕ Rejected <span style={styles.tabCountRed}>{counts.rejected}</span>
-            </button>
+              <button
+                onClick={() => setFilter("rejected")}
+                style={{
+                  ...styles.filterBtn,
+                  ...(filter === "rejected" ? styles.filterBtnRejectedActive : {}),
+                }}
+              >
+                ✕ Rejected <span style={styles.tabCountRed}>{counts.rejected}</span>
+              </button>
+            </div>
+
+            <div style={styles.searchWrapper}>
+              <span style={styles.searchIcon}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search by name, email, CNIC, license, phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={styles.searchInput}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  style={styles.clearSearchBtn}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
-          <div style={styles.searchWrapper}>
-            <span style={styles.searchIcon}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search by name, email, CNIC, or license..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={styles.searchInput}
-            />
-            {searchQuery && (
+          {/* Secondary Sub-Filter Row: Role Category & User Account History */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+              padding: "10px 14px",
+              backgroundColor: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid rgba(255, 255, 255, 0.06)",
+              borderRadius: "10px",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            {/* Role Filter */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", color: "#9CA3AF", fontWeight: "600", marginRight: "4px" }}>
+                Role:
+              </span>
               <button
-                onClick={() => setSearchQuery("")}
-                style={styles.clearSearchBtn}
+                onClick={() => setCategoryFilter("all")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: categoryFilter === "all" ? "rgba(255, 110, 20, 0.25)" : "transparent",
+                  color: categoryFilter === "all" ? "#FF6E14" : "#9CA3AF",
+                }}
               >
-                ✕
+                All Types ({counts.all})
               </button>
-            )}
+              <button
+                onClick={() => setCategoryFilter("hosts")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: categoryFilter === "hosts" ? "rgba(245, 158, 11, 0.25)" : "transparent",
+                  color: categoryFilter === "hosts" ? "#FBBF24" : "#9CA3AF",
+                }}
+              >
+                🚗 Hosts / Owners ({counts.hosts})
+              </button>
+              <button
+                onClick={() => setCategoryFilter("customers")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: categoryFilter === "customers" ? "rgba(59, 130, 246, 0.25)" : "transparent",
+                  color: categoryFilter === "customers" ? "#60A5FA" : "#9CA3AF",
+                }}
+              >
+                🪪 Customer Drivers ({counts.customers})
+              </button>
+            </div>
+
+            {/* Account History Filter */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", color: "#9CA3AF", fontWeight: "600", marginRight: "4px" }}>
+                Account History:
+              </span>
+              <button
+                onClick={() => setUserOriginFilter("all")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: userOriginFilter === "all" ? "rgba(255, 255, 255, 0.12)" : "transparent",
+                  color: userOriginFilter === "all" ? "#FFF" : "#9CA3AF",
+                }}
+              >
+                All Accounts
+              </button>
+              <button
+                onClick={() => setUserOriginFilter("existing")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: userOriginFilter === "existing" ? "rgba(16, 185, 129, 0.25)" : "transparent",
+                  color: userOriginFilter === "existing" ? "#34D399" : "#9CA3AF",
+                }}
+              >
+                🔄 Existing Users (Updated Info) ({counts.existingUsers})
+              </button>
+              <button
+                onClick={() => setUserOriginFilter("new")}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  border: "none",
+                  backgroundColor: userOriginFilter === "new" ? "rgba(139, 92, 246, 0.25)" : "transparent",
+                  color: userOriginFilter === "new" ? "#A78BFA" : "#9CA3AF",
+                }}
+              >
+                🆕 New Users ({counts.newUsers})
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -465,12 +649,108 @@ export default function HostApprovalsPage() {
                   <div style={styles.cardHeaderMeta}>
                     <h4 style={styles.cardName}>{displayName}</h4>
                     <span style={styles.cardEmail}>{displayEmail}</span>
+
+                    {/* Differentiator Badges */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
+                      {/* Application Category Badge */}
+                      {item.isExplicitHost || item.roleCategory === "host" ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "rgba(245, 158, 11, 0.15)",
+                            color: "#FBBF24",
+                            border: "1px solid rgba(245, 158, 11, 0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🚗 Host Application
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "rgba(59, 130, 246, 0.15)",
+                            color: "#60A5FA",
+                            border: "1px solid rgba(59, 130, 246, 0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🪪 Customer Driver
+                        </span>
+                      )}
+
+                      {/* User Origin Badge */}
+                      {item.submissionKind === "resubmission" ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "rgba(239, 68, 68, 0.15)",
+                            color: "#F87171",
+                            border: "1px solid rgba(239, 68, 68, 0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          ⚠️ Re-submitted Docs
+                        </span>
+                      ) : item.isExistingUser ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "rgba(16, 185, 129, 0.15)",
+                            color: "#34D399",
+                            border: "1px solid rgba(16, 185, 129, 0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🔄 Existing User (Updated Info)
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            backgroundColor: "rgba(139, 92, 246, 0.15)",
+                            color: "#A78BFA",
+                            border: "1px solid rgba(139, 92, 246, 0.35)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          🆕 New User
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={styles.statusBadgeWrapper}>
                     {isPending ? (
                       <span style={styles.badgePending}>⏳ Awaiting Review</span>
                     ) : isVerified ? (
-                      <span style={styles.badgeVerified}>✓ Host Approved</span>
+                      <span style={styles.badgeVerified}>
+                        {item.isExplicitHost ? "✓ Host Approved" : "✓ Verified Driver"}
+                      </span>
                     ) : isRejected ? (
                       <span style={styles.badgeRejected}>✕ Rejected</span>
                     ) : (
@@ -478,6 +758,27 @@ export default function HostApprovalsPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Existing user callout banner */}
+                {item.isExistingUser && (
+                  <div
+                    style={{
+                      margin: "8px 0 10px 0",
+                      padding: "6px 10px",
+                      backgroundColor: "rgba(16, 185, 129, 0.08)",
+                      border: "1px solid rgba(16, 185, 129, 0.25)",
+                      borderRadius: "6px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontSize: "11px",
+                      color: "#A7F3D0",
+                    }}
+                  >
+                    <span>🔄</span>
+                    <span>Existing account: user updated CNIC / driving license.</span>
+                  </div>
+                )}
 
                 {/* Information Grid */}
                 <div style={styles.cardMetaGrid}>
@@ -521,7 +822,7 @@ export default function HostApprovalsPage() {
                         }
                         style={styles.docThumbBox}
                       >
-                        {item.cnicFrontUrl.startsWith("http") ? (
+                        {isImageSrc(item.cnicFrontUrl) ? (
                           <img
                             src={item.cnicFrontUrl}
                             alt="CNIC Front"
@@ -552,7 +853,7 @@ export default function HostApprovalsPage() {
                         }
                         style={styles.docThumbBox}
                       >
-                        {item.cnicBackUrl.startsWith("http") ? (
+                        {isImageSrc(item.cnicBackUrl) ? (
                           <img
                             src={item.cnicBackUrl}
                             alt="CNIC Back"
@@ -583,7 +884,7 @@ export default function HostApprovalsPage() {
                         }
                         style={styles.docThumbBox}
                       >
-                        {item.licenseUrl.startsWith("http") ? (
+                        {isImageSrc(item.licenseUrl) ? (
                           <img
                             src={item.licenseUrl}
                             alt="Driving License"
@@ -602,6 +903,48 @@ export default function HostApprovalsPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Attached Vehicle Preview if present */}
+                {item.hostCar && (
+                  <div
+                    style={{
+                      margin: "12px 0 6px 0",
+                      padding: "10px 14px",
+                      backgroundColor: "rgba(255, 110, 20, 0.08)",
+                      border: "1px solid rgba(255, 110, 20, 0.25)",
+                      borderRadius: "8px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "20px" }}>🚘</span>
+                      <div>
+                        <div style={{ fontSize: "13px", fontWeight: "bold", color: "#FFF" }}>
+                          {item.hostCar.name || `${item.hostCar.brand || ''} ${item.hostCar.model || ''}`}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.6)" }}>
+                          Plate: {item.hostCar.registrationNumber || "Unassigned"} • Rent: Rs. {item.hostCar.price || "N/A"}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: "bold",
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                        backgroundColor: "rgba(245, 158, 11, 0.2)",
+                        color: "#F59E0B",
+                        border: "1px solid rgba(245, 158, 11, 0.4)",
+                      }}
+                    >
+                      Attached Vehicle
+                    </span>
+                  </div>
+                )}
 
                 {/* Rejection notice if previously rejected */}
                 {isRejected && item.rejectionReason && (
@@ -623,24 +966,44 @@ export default function HostApprovalsPage() {
 
                   <div style={styles.actionGroup}>
                     {!isVerified && (
-                      <>
+                      (item.hostCar && (item.hostCar.id || item.hostCar.name || item.hostCar.brand)) ? (
+                        <>
+                          <button
+                            onClick={() => handleApprove(item, false)}
+                            disabled={isProcessing}
+                            style={styles.approveHostOnlyBtn}
+                            title="Approves host identity only. Attached vehicles stay pending for vehicle review."
+                          >
+                            {isProcessing ? "..." : "✓ Host Only"}
+                          </button>
+                          <button
+                            onClick={() => handleApprove(item, true)}
+                            disabled={isProcessing}
+                            style={styles.approveBtn}
+                            title="Approves host identity and simultaneously publishes their vehicle."
+                          >
+                            {isProcessing ? "..." : "✓ Host & Car"}
+                          </button>
+                        </>
+                      ) : (item.isExplicitHost || item.role === "owner") ? (
                         <button
                           onClick={() => handleApprove(item, false)}
                           disabled={isProcessing}
-                          style={styles.approveHostOnlyBtn}
-                          title="Approves host identity only. Attached vehicles stay pending for vehicle review."
+                          style={styles.approveBtn}
+                          title="Approves host application."
                         >
-                          {isProcessing ? "..." : "✓ Host Only"}
+                          {isProcessing ? "..." : "✓ Approve Host"}
                         </button>
+                      ) : (
                         <button
-                          onClick={() => handleApprove(item, true)}
+                          onClick={() => handleApprove(item, false)}
                           disabled={isProcessing}
                           style={styles.approveBtn}
-                          title="Approves host identity and simultaneously publishes their vehicle."
+                          title="Approves customer driving license and identity."
                         >
-                          {isProcessing ? "..." : "✓ Host & Car"}
+                          {isProcessing ? "..." : "✓ Approve Customer"}
                         </button>
-                      </>
+                      )
                     )}
 
                     {!isRejected && (
@@ -670,7 +1033,9 @@ export default function HostApprovalsPage() {
             <div style={styles.modalHeader}>
               <div>
                 <h3 style={styles.modalTitle}>
-                  Host Verification: {inspectingItem.name || inspectingItem.email}
+                  {inspectingItem.isExplicitHost || inspectingItem.roleCategory === "host"
+                    ? `Host Application: ${inspectingItem.name || inspectingItem.email || inspectingItem.id}`
+                    : `Customer Driver Verification: ${inspectingItem.name || inspectingItem.email || inspectingItem.id}`}
                 </h3>
                 <span style={styles.modalSubtitle}>UID: {inspectingItem.id}</span>
               </div>
@@ -683,26 +1048,115 @@ export default function HostApprovalsPage() {
             </div>
 
             <div style={styles.modalBody}>
+              {/* Prominent Origin & History Callout */}
+              {inspectingItem.isExistingUser ? (
+                <div
+                  style={{
+                    marginBottom: "18px",
+                    padding: "12px 16px",
+                    backgroundColor: "rgba(16, 185, 129, 0.12)",
+                    border: "1px solid rgba(16, 185, 129, 0.35)",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                  }}
+                >
+                  <span style={{ fontSize: "20px" }}>🔄</span>
+                  <div>
+                    <div style={{ color: "#34D399", fontWeight: "bold", fontSize: "13px" }}>
+                      Existing User Account (Updated Info)
+                    </div>
+                    <div style={{ color: "#D1FAE5", fontSize: "12px", marginTop: "2px" }}>
+                      This applicant already has an established user account. They updated their verification documents (CNIC / License) for review.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginBottom: "18px",
+                    padding: "12px 16px",
+                    backgroundColor: "rgba(139, 92, 246, 0.12)",
+                    border: "1px solid rgba(139, 92, 246, 0.35)",
+                    borderRadius: "10px",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "10px",
+                  }}
+                >
+                  <span style={{ fontSize: "20px" }}>🆕</span>
+                  <div>
+                    <div style={{ color: "#A78BFA", fontWeight: "bold", fontSize: "13px" }}>
+                      New User Registration
+                    </div>
+                    <div style={{ color: "#EDE9FE", fontSize: "12px", marginTop: "2px" }}>
+                      First-time applicant registering and verifying identity documents.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Profile Details */}
               <div style={styles.modalSection}>
                 <h4 style={styles.sectionHeading}>Applicant Profile</h4>
                 <div style={styles.detailGrid}>
                   <div>
                     <span style={styles.metaLabel}>FULL NAME</span>
-                    <span style={styles.metaValue}>{inspectingItem.name || "N/A"}</span>
+                    <span style={styles.metaValue}>
+                      {inspectingItem.name ||
+                        inspectingItem.fullName ||
+                        inspectingItem.displayName ||
+                        inspectingItem.userName ||
+                        "Unnamed User"}
+                    </span>
                   </div>
                   <div>
                     <span style={styles.metaLabel}>EMAIL</span>
-                    <span style={styles.metaValue}>{inspectingItem.email || "N/A"}</span>
+                    <span style={styles.metaValue}>
+                      {inspectingItem.email || inspectingItem.userEmail || "N/A"}
+                    </span>
                   </div>
                   <div>
                     <span style={styles.metaLabel}>PHONE NUMBER</span>
                     <span style={styles.metaValue}>
-                      {inspectingItem.phone || inspectingItem.phoneNumber || "N/A"}
+                      {inspectingItem.phone ||
+                        inspectingItem.phoneNumber ||
+                        inspectingItem.contactNumber ||
+                        inspectingItem.mobile ||
+                        "N/A"}
                     </span>
                   </div>
                   <div>
-                    <span style={styles.metaLabel}>ACCOUNT ROLE</span>
+                    <span style={styles.metaLabel}>APPLICATION TYPE</span>
+                    <span
+                      style={{
+                        ...styles.metaValue,
+                        color: inspectingItem.isExplicitHost ? "#FBBF24" : "#60A5FA",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      {inspectingItem.isExplicitHost ? "🚗 Host / Car Owner" : "🪪 Customer Driver"}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={styles.metaLabel}>ACCOUNT HISTORY</span>
+                    <span
+                      style={{
+                        ...styles.metaValue,
+                        color: inspectingItem.isExistingUser ? "#34D399" : "#A78BFA",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      {inspectingItem.submissionKind === "resubmission"
+                        ? "⚠️ Re-submitted (After Rejection)"
+                        : inspectingItem.isExistingUser
+                        ? "🔄 Existing Account (Updated Info)"
+                        : "🆕 New User Registration"}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={styles.metaLabel}>CURRENT ROLE</span>
                     <span style={styles.metaValue}>{inspectingItem.role || "customer"}</span>
                   </div>
                   <div>
@@ -723,7 +1177,7 @@ export default function HostApprovalsPage() {
                   <div style={styles.modalDocItem}>
                     <span style={styles.docLabel}>CNIC FRONT</span>
                     {inspectingItem.cnicFrontUrl ? (
-                      inspectingItem.cnicFrontUrl.startsWith("http") ? (
+                      isImageSrc(inspectingItem.cnicFrontUrl) ? (
                         <img
                           src={inspectingItem.cnicFrontUrl}
                           alt="CNIC Front"
@@ -738,7 +1192,11 @@ export default function HostApprovalsPage() {
                       ) : (
                         <div style={styles.modalDocFallback}>
                           <span>📄 File Path:</span>
-                          <code>{inspectingItem.cnicFrontUrl}</code>
+                          <code>
+                            {inspectingItem.cnicFrontUrl.length > 50
+                              ? inspectingItem.cnicFrontUrl.slice(0, 50) + "..."
+                              : inspectingItem.cnicFrontUrl}
+                          </code>
                         </div>
                       )
                     ) : (
@@ -749,7 +1207,7 @@ export default function HostApprovalsPage() {
                   <div style={styles.modalDocItem}>
                     <span style={styles.docLabel}>CNIC BACK</span>
                     {inspectingItem.cnicBackUrl ? (
-                      inspectingItem.cnicBackUrl.startsWith("http") ? (
+                      isImageSrc(inspectingItem.cnicBackUrl) ? (
                         <img
                           src={inspectingItem.cnicBackUrl}
                           alt="CNIC Back"
@@ -764,7 +1222,11 @@ export default function HostApprovalsPage() {
                       ) : (
                         <div style={styles.modalDocFallback}>
                           <span>📄 File Path:</span>
-                          <code>{inspectingItem.cnicBackUrl}</code>
+                          <code>
+                            {inspectingItem.cnicBackUrl.length > 50
+                              ? inspectingItem.cnicBackUrl.slice(0, 50) + "..."
+                              : inspectingItem.cnicBackUrl}
+                          </code>
                         </div>
                       )
                     ) : (
@@ -775,7 +1237,7 @@ export default function HostApprovalsPage() {
                   <div style={styles.modalDocItem}>
                     <span style={styles.docLabel}>DRIVING LICENSE</span>
                     {inspectingItem.licenseUrl ? (
-                      inspectingItem.licenseUrl.startsWith("http") ? (
+                      isImageSrc(inspectingItem.licenseUrl) ? (
                         <img
                           src={inspectingItem.licenseUrl}
                           alt="Driving License"
@@ -790,7 +1252,11 @@ export default function HostApprovalsPage() {
                       ) : (
                         <div style={styles.modalDocFallback}>
                           <span>📄 File Path:</span>
-                          <code>{inspectingItem.licenseUrl}</code>
+                          <code>
+                            {inspectingItem.licenseUrl.length > 50
+                              ? inspectingItem.licenseUrl.slice(0, 50) + "..."
+                              : inspectingItem.licenseUrl}
+                          </code>
                         </div>
                       )
                     ) : (
@@ -799,6 +1265,43 @@ export default function HostApprovalsPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Attached Vehicle Details if present */}
+              {inspectingItem.hostCar && (
+                <div style={styles.modalSection}>
+                  <h4 style={styles.sectionHeading}>Attached First Vehicle</h4>
+                  <div style={styles.detailGrid}>
+                    <div>
+                      <span style={styles.metaLabel}>VEHICLE NAME</span>
+                      <span style={styles.metaValue}>
+                        {inspectingItem.hostCar.name || `${inspectingItem.hostCar.brand || ''} ${inspectingItem.hostCar.model || ''}`}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={styles.metaLabel}>NUMBER PLATE</span>
+                      <span style={styles.metaValue}>{inspectingItem.hostCar.registrationNumber || "Unassigned"}</span>
+                    </div>
+                    <div>
+                      <span style={styles.metaLabel}>DAILY RENTAL</span>
+                      <span style={styles.metaValue}>Rs. {inspectingItem.hostCar.price || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span style={styles.metaLabel}>RENTAL MODE</span>
+                      <span style={styles.metaValue}>{inspectingItem.hostCar.rentalMode || "Both Available"}</span>
+                    </div>
+                    <div>
+                      <span style={styles.metaLabel}>TRANSMISSION / FUEL</span>
+                      <span style={styles.metaValue}>
+                        {inspectingItem.hostCar.transmission || "Automatic"} • {inspectingItem.hostCar.fuelType || "Petrol"}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={styles.metaLabel}>LOCATION</span>
+                      <span style={styles.metaValue}>{inspectingItem.hostCar.location || "N/A"}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div style={styles.modalFooter}>
@@ -817,22 +1320,45 @@ export default function HostApprovalsPage() {
                 >
                   ✕ Reject Application
                 </button>
-                <button
-                  onClick={() => handleApprove(inspectingItem, false)}
-                  disabled={processingId === inspectingItem.id}
-                  style={styles.approveHostOnlyBtn}
-                  title="Approves host identity only. Attached vehicles stay pending for vehicle review."
-                >
-                  ✓ Approve Host Only
-                </button>
-                <button
-                  onClick={() => handleApprove(inspectingItem, true)}
-                  disabled={processingId === inspectingItem.id}
-                  style={styles.approveBtn}
-                  title="Approves host identity and simultaneously publishes their vehicle."
-                >
-                  ✓ Approve Host & Vehicle
-                </button>
+
+                {inspectingItem.hostCar ? (
+                  <>
+                    <button
+                      onClick={() => handleApprove(inspectingItem, false)}
+                      disabled={processingId === inspectingItem.id}
+                      style={styles.approveHostOnlyBtn}
+                      title="Approves host identity only. Attached vehicles stay pending for vehicle review."
+                    >
+                      ✓ Approve Host Only
+                    </button>
+                    <button
+                      onClick={() => handleApprove(inspectingItem, true)}
+                      disabled={processingId === inspectingItem.id}
+                      style={styles.approveBtn}
+                      title="Approves host identity and simultaneously publishes their vehicle."
+                    >
+                      ✓ Approve Host & Vehicle
+                    </button>
+                  </>
+                ) : inspectingItem.isExplicitHost ? (
+                  <button
+                    onClick={() => handleApprove(inspectingItem, false)}
+                    disabled={processingId === inspectingItem.id}
+                    style={styles.approveBtn}
+                    title="Approves host application."
+                  >
+                    ✓ Approve Host Application
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleApprove(inspectingItem, false)}
+                    disabled={processingId === inspectingItem.id}
+                    style={styles.approveBtn}
+                    title="Approves customer driving license and identity."
+                  >
+                    ✓ Approve Driver Verification
+                  </button>
+                )}
               </div>
             </div>
           </div>

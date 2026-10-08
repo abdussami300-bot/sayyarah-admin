@@ -9,9 +9,11 @@ import { auth } from "@/lib/firebase";
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: "📊" },
   { label: "Users", href: "/users", icon: "👥" },
-  { label: "Host Approvals", href: "/host-approvals", icon: "🛡️" },
-  { label: "Cars", href: "/cars", icon: "🚘" },
+  { label: "Owner Applications", href: "/owner-applications", icon: "🚗" },
+  { label: "Document Verification", href: "/document-verification", icon: "🛡️" },
+  { label: "Cars & Fleet", href: "/cars", icon: "🚘" },
   { label: "Bookings", href: "/bookings", icon: "📅" },
+  { label: "Activity & Audit Logs", href: "/audit-logs", icon: "📜" },
   { label: "Payments", href: "/payments", icon: "💳" },
 ];
 

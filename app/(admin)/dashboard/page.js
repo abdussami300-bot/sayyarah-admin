@@ -54,35 +54,59 @@ export default function DashboardPage() {
 
   const stats = [
     {
-      label: "REGISTERED USERS",
-      value: loading ? "..." : String(metrics.registeredUsers),
+      label: "TOTAL USERS",
+      value: loading ? "..." : String(metrics.registeredUsers || 0),
       icon: "👥",
       color: "#00B4D8",
-      change: "Customer & host accounts in Firestore",
+      change: `${metrics.newUsers || 0} registered recently`,
       link: "/users",
     },
     {
-      label: "HOST APPROVALS",
-      value: loading ? "..." : String(metrics.pendingHosts),
-      icon: "🛡️",
-      color: "#F59E0B",
-      change: `${metrics.pendingHosts} pending CNIC & license reviews`,
-      link: "/host-approvals",
+      label: "CUSTOMERS",
+      value: loading ? "..." : String(metrics.customers || 0),
+      icon: "👤",
+      color: "#818CF8",
+      change: "Active vehicle renters & browsers",
+      link: "/users",
     },
     {
-      label: "CATALOG VEHICLES",
-      value: loading ? "..." : String(metrics.fleetVehicles),
-      icon: "🚘",
+      label: "APPROVED OWNERS",
+      value: loading ? "..." : String(metrics.owners || 0),
+      icon: "🚗",
       color: "#10B981",
-      change: `${metrics.pendingCars} listings awaiting admin approval`,
+      change: "Approved car hosts with fleet access",
+      link: "/users",
+    },
+    {
+      label: "OWNER APPLICATIONS",
+      value: loading ? "..." : String(metrics.pendingOwnerApplications || 0),
+      icon: "📋",
+      color: "#F59E0B",
+      change: `${metrics.pendingOwnerApplications || 0} applications awaiting review`,
+      link: "/owner-applications",
+    },
+    {
+      label: "DOCUMENT QUEUE",
+      value: loading ? "..." : String(metrics.pendingDocuments || 0),
+      icon: "🛡️",
+      color: "#EC4899",
+      change: `${metrics.pendingDocuments || 0} CNIC & license verifications`,
+      link: "/document-verification",
+    },
+    {
+      label: "FLEET & CARS",
+      value: loading ? "..." : String(metrics.fleetVehicles || 0),
+      icon: "🚘",
+      color: "#38BDF8",
+      change: `${metrics.pendingCars || 0} pending vehicle listings`,
       link: "/cars",
     },
     {
       label: "TOTAL BOOKINGS",
-      value: loading ? "..." : String(metrics.totalBookings),
+      value: loading ? "..." : String(metrics.totalBookings || 0),
       icon: "📅",
       color: "#A855F7",
-      change: "Active & completed reservations",
+      change: "Active & completed rental trips",
       link: "/bookings",
     },
   ];
@@ -143,9 +167,14 @@ export default function DashboardPage() {
             </div>
           </div>
           <div style={styles.bannerBtnGroup}>
-            {metrics.pendingHosts > 0 && (
-              <Link href="/host-approvals" style={styles.actionBtnAmber}>
-                Review Hosts ({metrics.pendingHosts})
+            {metrics.pendingOwnerApplications > 0 && (
+              <Link href="/owner-applications" style={styles.actionBtnAmber}>
+                Review Owner Apps ({metrics.pendingOwnerApplications})
+              </Link>
+            )}
+            {metrics.pendingDocuments > 0 && (
+              <Link href="/document-verification" style={styles.actionBtnAmber}>
+                Verify Documents ({metrics.pendingDocuments})
               </Link>
             )}
             {metrics.pendingCars > 0 && (
